@@ -120,7 +120,7 @@ function main () {
 	walls.push(new Wall (19, 20, 1, 2))
 	walls.push(new Wall (21, 21, 6, 1))
 	walls.push(new Wall (24, 19, 3, 1))
-	walls.push(new Wall (22, 22, 1, 3))
+	walls.push(new Wall (22, 22, 1, 2))
 	walls.push(new Wall (22, 26, 1, 2))
 	walls.push(new Wall (13, 23, 1, 3))
 	walls.push(new Wall (13, 28, 10, 1))
@@ -275,6 +275,7 @@ function main () {
 	breakableWalls.push(new breakableWall (12, 21, 60, 2))
 	breakableWalls.push(new breakableWall (11, 25, 50, 3))
 	breakableWalls.push(new breakableWall (12, 25, 50, 3))
+	breakableWalls.push(new breakableWall (22, 24, 40, 4))
 	
 	class playerRespawner {
 		constructor (x, y, health, selfRegenRate, regenRate) {
@@ -448,7 +449,7 @@ attackSpeed = speed * con / (con + weight)
 				this.defenseGrowth = 40
 				this.skillGrowth = [50, 0, 20, 0, 20, 10]
 				this.speedGrowth = 60
-				this.option1 = 'exception in /astar.js'
+				this.option1 = ''
 				this.option2 = 'Sniper'
 			} else if (Name === 'Nick') {
 				this.letter = 'S'
@@ -493,7 +494,7 @@ attackSpeed = speed * con / (con + weight)
 				this.skillGrowth = [0, 0, 0, 0, 0, 0]
 				this.speedGrowth = 60
 				this.option1 = 'Bishop'
-				this.option2 = 'something else'
+				this.option2 = ''
 			}
 			this.shieldInv = this.shield
 			this.exp = 0
@@ -585,7 +586,9 @@ attackSpeed = speed * con / (con + weight)
 			else if (keyWentDown['p']) this.promote(this.option2)
 		}
 		promote (newClass) {
-			this.promoted = true
+			if (newClass !== '') {
+				this.promoted = true
+			}
 			if (newClass === 'Swordmaster') {
 				
 				// sword skill and speed intensive. bonus: crit
@@ -1799,6 +1802,30 @@ let mountedTrollChance = 96
 		}
 		return wealth
 	}
+	const getWealthOrder = () => {
+		let wealthOrder = []
+		for (const p of allPlayers) {
+			playerWealth = 0
+			playerWealth += p.gold
+			playerWealth += weaponValue[MATERIAL[p.shieldInv] - 1]
+			for (const i of p.inventory) {
+				playerWealth += weaponValue[MATERIAL[i[1]] - 1]
+			}
+			for (const a of p.armor) {
+				playerWealth += armorValue[MATERIAL[a] - 1]
+			}
+			if (p.stockpile !== undefined) {
+				playerWealth += p.stockpile.gold * 0.8
+				for (const i of p.stockpile.inventory) {
+					playerWealth += weaponValue[MATERIAL[i[1]] - 1] / 2
+				}
+				playerWealth += weaponValue[MATERIAL[p.stockpile.shieldInv] - 1] / 2
+			}
+			wealthOrder.push(playerWealth)
+		}
+		wealthOrder.sort((a, b) => b - a)
+		return wealthOrder
+	}
 	const getEnemyMaterial = () => {
 		const wealth = getHighestWealth()
 		if (wealth < 150) return 1
@@ -2279,7 +2306,7 @@ let mountedTrollChance = 96
 			let target = inRange[healSelect % inRange.length]
 			ctx.fillText(target.name, 250, 550)
 			ctx.fillText('Health: ' + target.health + ' / ' + target.maxHealth, 200, 575)
-			if (getButtons()[1]) object.heal(target)
+			if (getButtons()[1] && target.health === target.maxHealth) object.heal(target)
 		}
 		if (healer.exp >= 100) {
 			// clear text
@@ -2866,7 +2893,10 @@ let mountedTrollChance = 96
 			}
 			
 			// enemy level-wealth calculation
-			if ((getHighestWealth() - 150) / wealthInterval >= autoEnemyDifficulty) {
+			const wealthOrder = getWealthOrder()
+			const fastLevelUp = ((wealthOrder[0] + 150) / (wealthOrder[2] + 150) > 2)
+			const intervalFactor = 1 - fastLevelUp / 2
+			if ((getHighestWealth() - 150) / (wealthInterval * intervalFactor) >= autoEnemyDifficulty) {
 				autoEnemyDifficulty += 1
 				enemyDifficulty += 1
 			}
