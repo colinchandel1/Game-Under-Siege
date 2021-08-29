@@ -2306,7 +2306,7 @@ let mountedTrollChance = 96
 			let target = inRange[healSelect % inRange.length]
 			ctx.fillText(target.name, 250, 550)
 			ctx.fillText('Health: ' + target.health + ' / ' + target.maxHealth, 200, 575)
-			if (getButtons()[1] && target.health === target.maxHealth) object.heal(target)
+			if (getButtons()[1] && target.health < target.maxHealth) object.heal(target)
 		}
 		if (healer.exp >= 100) {
 			// clear text
