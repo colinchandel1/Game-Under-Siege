@@ -37,6 +37,51 @@ function main () {
 	let enemySiegeMin = 20
 	let enemySiegeMax = 60
 	let promotions = true
+	const cheatCount = {
+		'overMoving': 0,
+		'tampering': 0,
+		'turnSkipping': 0,
+		'movingWrongPhase': 0,
+		'controllingDead': 0,
+		'cheatAlert': (cheat) => {
+			if (cheatCount[cheat] === cheatsToLimits[cheat][0]) writeAlerts(cheatsToMsg[cheat][0])
+			if (cheatCount[cheat] === cheatsToLimits[cheat][1]) writeAlerts(cheatsToMsg[cheat][1])
+			if (surprised) manageSurprise(cheat)
+			if (cheatCount[cheat] === cheatsToLimits[cheat][2]) summonSurprise()
+		}
+	}
+	const cheatsToMsg = {
+		'overMoving': ['It\'s a bad idea for a character to act more than once per turn.', 'The gods frown upon a character fighting or healing more than once per turn.'],
+		'tampering': ['It\'s a bad idea to tamper with forces beyond your players.', 'The gods grow angry with your tampering.'],
+		'turnSkipping': ['Be patient, the turn hasn\'t ended yet.', 'The gods dislike your impatience.'],
+		'movingWrongPhase': ['Halt! It is not your turn.', 'The gods are angered by your disrespect of turns.'],
+		'controllingDead': ['Only fools trifle with spirits of the dead.', 'The gods will not allow you to control the dead.']
+	}
+	const cheatsToLimits = {
+		'overMoving': [4, 8, 24],
+		'tampering': [3, 6, 16],
+		'turnSkipping': [4, 8, 15],
+		'movingWrongPhase': [2, 4, 10],
+		'controllingDead': [3, 6, 12]
+	}
+	const summonSurprise = (cheat) => {
+		writeAlerts('The gods have decided to punish you!')
+		surprised = true
+		const lvl = allPlayers.slice().sort((a, b) => b.level - a.level)[0].level + 20
+		const surprise = new Surprise(50, 10, lvl)
+	}
+	const manageSurprise = (cheat) => {
+		surprises.forEach(surprise => {
+			if (cheat === 'overMoving') {
+				enemyPhase = true
+				iTime = 1
+			} else if (cheat === 'turnSkipping') surprise.move += 1
+			else if (cheat === 'movingWrongPhase') surprise.move += 2
+			surprise.level += 2
+			surprise.updateStats()
+		})
+	}
+	const cheatDecrementChance = 0.1
 	
 	// constant conversions (item - number)
 	const WEAPON = {
@@ -47,7 +92,8 @@ function main () {
 		'Ballista': 4,
 		'Staff': 5,
 		'Weapon': 6,
-		'Dagger': 'cc'
+		'Dagger': 7,
+		'Claws': 10
 	}
 	const MATERIAL = {
 		0: 6,
@@ -58,7 +104,7 @@ function main () {
 		'Adamant': 4,
 		'Heal': 5,
 		'Wooden': 6,
-		' ': '-'
+		' ': 7
 	}
 	const ARMORBLOCK = {
 		'No': 0,
@@ -362,6 +408,7 @@ attackSpeed = speed * con / (con + weight)
 			this.promoted = false
 			this.respawning = false
 			this.arena = false
+			this.attacked = false
 			if (Name === 'Colin') {
 				this.letter = 'C'
 				this.con = 130
@@ -474,6 +521,7 @@ attackSpeed = speed * con / (con + weight)
 				this.option2 = 'Wyvern Rider'
 			} else if (Name === 'Healer') {
 				this.letter = 'H'
+				this.didHeal = false
 				this.x = 12
 				this.y = 10
 				this.maxHealth = 15
@@ -812,6 +860,7 @@ let mountedTrollChance = 96
 			this.y = Math.round(Math.random() * 20 + 5)
 			this.player = false
 			this.neutral = false
+			this.hostile = true
 			this.ids = []
 			this.fleeing = false
 			this.fled = false
@@ -1195,6 +1244,9 @@ let mountedTrollChance = 96
 				
 				// go for the weakest enemy
 				inRange.sort((a, b) => (a.defense - b.defense))
+				for (let i = inRange.length - 1; i >= 0; --i) {
+					if (this.weaponRange >= 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - inRange[i].defense - inRange[i].armorSum() <= 0) inRange.splice(i, 1)
+				}
 			}
 			if (itemsInRange.length) {
 				
@@ -1207,8 +1259,9 @@ let mountedTrollChance = 96
 			
 			// go for the closest enemy
 			let enemies = attackables.slice()
-			for (let i = 0; i < enemies.length; ++i) {
+			for (let i = enemies.length - 1; i > 0; --i) {
 				if ((!enemies[i].player && !enemies[i].neutral) || enemies[i].health <=0) enemies.splice(i, 1)
+				if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
 			}
 			enemies.sort((a, b) => Math.abs(itself.x - a.x) + Math.abs(itself.y - a.y) - Math.abs(itself.x - b.x) - Math.round(itself.y - b.y))
 			let stableWalls = breakableWalls.slice()
@@ -1599,6 +1652,367 @@ let mountedTrollChance = 96
 		}
 	}
 	
+	const surprises = []
+	class Surprise {
+		constructor (x, y, lvl) {
+			this.x = x
+			this.y = y
+			this.uninvitedGuest = true
+			this.player = false
+			this.neutral = false
+			this.hostile = true
+			this.name = 'Punishment from Above'
+			this.ids = []
+			this.fleeing = false
+			this.fled = false
+			this.arena = false
+			this.con = 300
+			this.armor = ['Adamant', 'Adamant', 'Adamant', 'Adamant']
+			if (lvl < 1) lvl = 1
+			this.level = lvl
+			this.shield = 0
+			this.gold = 0
+			this.move = 8
+			this.letter = 'S'
+			this.healthGrowth = 90
+			this.strengthGrowth = 100
+			this.strength = 10 + Math.round(this.strengthGrowth / 100 * (lvl - 1))
+			this.defenseGrowth = 80
+			this.defense = 10 + Math.round(this.defenseGrowth / 100 * (lvl - 1))
+			this.skillGrowth = 80
+			this.skill = 10 + Math.round(this.skillGrowth / 100 * (lvl - 1))
+			this.speedGrowth = 60
+			this.speed = 15 + Math.round(this.speedGrowth / 100 * (lvl - 1))
+			this.weapon = ['Claws', 'Adamant']
+			this.inventory = [this.weapon]
+			this.maxHealth = 40 + Math.round(this.healthGrowth / 100 * (lvl - 1))
+			this.health = this.maxHealth
+			this.weaponRange = 1
+			surprises.push(this)
+			allEnemies.push(this)
+			allObjects.push(allEnemies[allEnemies.length - 1])
+			this.num  = allEnemies.length
+		}
+		getSkill (num) {
+			return this.skill
+		}
+		getArmor (num) {
+			return this.armor[num]
+		}
+		getWeapon (num) {
+			return this.weapon[num]
+		}
+		armorSum () {
+			return ARMORBLOCK[this.getArmor(0)] + ARMORBLOCK[this.getArmor(1)] + ARMORBLOCK[this.getArmor(2)] + ARMORBLOCK[this.getArmor(3)]
+		}
+		armorWeightSum () {
+			return ARMORWEIGHT[this.getArmor(0)] + ARMORWEIGHT[this.getArmor(1)] + ARMORWEIGHT[this.getArmor(2)] + ARMORWEIGHT[this.getArmor(3)]
+		}
+		getActiveSkill () {
+			return this.skill
+		}
+		paint () {
+			ctx.fillStyle = '#400060'
+			ctx.fillRect(this.x * pSize, this.y * pSize, pSize, pSize)
+			ctx.fillStyle = '#c00020'
+			ctx.fillText(this.letter, (this.x + 1 / 5) * pSize, (this.y + 3 / 4) * pSize)
+		}
+		getWeight () {
+			let mass = this.con + this.armorWeightSum()
+			if (this.weapon) mass += weight[WEAPON[this.getWeapon(0)] - 1][MATERIAL[this.getWeapon(1)] - 1]
+			if (this.shield) mass += weight[1][MATERIAL[this.shield] - 1]
+			return mass
+		}
+		recover () {
+			this.health += this.maxHealth / 4
+			this.health = Math.round(this.health)
+			if (this.health > this.maxHealth) this.health = this.maxHealth
+		}
+		attacking () {
+			const range = this.move + this.weaponRange
+			let inRange = []
+			for (const p of attackables) {
+				if (Math.abs(this.x - p.x) + Math.abs(this.y - p.y) <= range) inRange.push(p)
+			}
+			for (let i = 0; i < attackables.length; ++i) {
+				if (!attackables[i].player && !attackables[i].neutral) attackables.splice(i, 1)
+			}
+			if (inRange.length) {
+				
+				// go for the weakest enemy
+				inRange.sort((a, b) => (a.defense + a.armorSum() - b.defense - b.armorSum()))
+			}
+			
+			return inRange
+		}
+		targetting () {
+			let itself = this
+			
+			// figure out if a player is in range of the enemy
+			const range = this.move + this.weaponRange
+			let inRange = []
+			for (const p of attackables) {
+				if ((Math.abs(this.x - p.x) + Math.abs(this.y - p.y) <= range) && p.health > 0) inRange.push(p)
+			}
+			for (let i = attackables.length - 1; i >= 0; --i) {
+				if (!attackables[i].player && !attackables[i].neutral) attackables.splice(i, 1)
+			}
+			if (inRange.length) {
+				
+				// go for the weakest enemy
+				inRange.sort((a, b) => (a.defense - b.defense))
+				for (let i = inRange.length - 1; i >= 0; --i) {
+					if (this.weaponRange >= 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - inRange[i].defense - inRange[i].armorSum() <= 0) inRange.splice(i, 1)
+				}
+			}
+			
+			// go for the closest enemy
+			let enemies = attackables.slice()
+			for (let i = enemies.length - 1; i > 0; --i) {
+				if ((!enemies[i].player && !enemies[i].neutral) || enemies[i].health <=0) enemies.splice(i, 1)
+				if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
+			}
+			enemies.sort((a, b) => Math.abs(itself.x - a.x) + Math.abs(itself.y - a.y) - Math.abs(itself.x - b.x) - Math.round(itself.y - b.y))
+			let stableWalls = breakableWalls.slice()
+			for (let i = stableWalls.length - 1; i >= 0; --i) {
+				if (stableWalls[i].health <= 0) stableWalls.splice(i, 1)
+			}
+			let stableRespawners = playerRespawners.slice()
+			for (let i = 0; i < stableRespawners.length; ++i) {
+				if (stableRespawners[i].health <= 0) stableRespawners.splice(i, 1)
+			}
+			return [stableRespawners, stableWalls, [inRange, enemies]]
+		}
+		pathFinding (map) {
+			let start = map.grid[this.x][this.y]
+			let picked = 0
+			let pickedPath
+			const range = this.move + this.weaponRange
+			
+			// check each target
+			let targets = this.targetting()
+			let possiblePaths = Array(targets.length).fill([])
+			possiblePaths[2] = Array(targets[2].length).fill([])
+			
+			targets[0].forEach(target => {
+				
+				// check target priority 1
+				map.grid[target.x][target.y].weight = 1
+				let pathValid = false
+				while (!pathValid) {
+					const possiblePath = astar.search(map, start, map.grid[target.x][target.y])
+					pathValid = true
+					for (const enemy of allEnemies) {
+						if (possiblePath.length !== 0 && enemy !== this) {
+							/* case 1: within range and weaponRange === 1, check 1 away
+							   case 2: longer than 2 && within move + 2 and weaponRange > 1, check 2 away
+							   case 3: longer than 2
+							*/
+							
+							if (possiblePath.length < range && this.weaponRange === 1 && possiblePath.length > 1) {
+								if (possiblePath[possiblePath.length - 2].x === enemy.x && possiblePath[possiblePath.length - 2].y === enemy.y) {
+									map.grid[enemy.x][enemy.y].weight = 0
+									pathValid = false
+								}
+							} else if (this.weaponRange > 1 && possiblePath.length > 2 && possiblePath.length < this.move + 2) {
+								if (possiblePath[possiblePath.length - 3].x === enemy.x && possiblePath[possiblePath.length - 3].y === enemy.y) {
+									map.grid[enemy.x][enemy.y].weight = 0
+									pathValid = false
+								}
+							} else if (possiblePath.length > 2 && possiblePath[this.move - 1].x === enemy.x && possiblePath[this.move - 1].y === enemy.y) {
+								map.grid[enemy.x][enemy.y].weight = 0
+								pathValid = false
+							}
+						}
+					}
+				}
+				const possiblePath = astar.search(map, start, map.grid[target.x][target.y])
+				for (const enemy of allEnemies) {
+					map.grid[enemy.x][enemy.y].weight = 1
+				}
+				if (possiblePath.length !== 0) {
+					if (possiblePath.length - 1 <= range) {
+						pickedPath = possiblePath
+						picked = target
+					} else possiblePaths[0].push(possiblePath)
+				}
+				map.grid[target.x][target.y].weight = 0
+			})
+			
+			targets[1].forEach(target => {
+				
+				// check target priority 1
+				map.grid[target.x][target.y].weight = 1
+				let pathValid = false
+				while (!pathValid) {
+					const possiblePath = astar.search(map, start, map.grid[target.x][target.y])
+					pathValid = true
+					for (const enemy of allEnemies) {
+						if (possiblePath.length !== 0 && enemy !== this) {
+							/* case 1: within range and weaponRange === 1, check 1 away
+							   case 2: longer than 2 && within move + 2 and weaponRange > 1, check 2 away
+							   case 3: longer than 2
+							*/
+							
+							if (possiblePath.length < range && this.weaponRange === 1 && possiblePath.length > 1) {
+								if (possiblePath[possiblePath.length - 2].x === enemy.x && possiblePath[possiblePath.length - 2].y === enemy.y) {
+									map.grid[enemy.x][enemy.y].weight = 0
+									pathValid = false
+								}
+							} else if (this.weaponRange > 1 && possiblePath.length > 2 && possiblePath.length < this.move + 2) {
+								if (possiblePath[possiblePath.length - 3].x === enemy.x && possiblePath[possiblePath.length - 3].y === enemy.y) {
+									map.grid[enemy.x][enemy.y].weight = 0
+									pathValid = false
+								}
+							} else if (possiblePath.length > 2 && possiblePath[this.move - 1].x === enemy.x && possiblePath[this.move - 1].y === enemy.y) {
+								map.grid[enemy.x][enemy.y].weight = 0
+								pathValid = false
+							}
+						}
+					}
+				}
+				const possiblePath = astar.search(map, start, map.grid[target.x][target.y])
+				for (const enemy of allEnemies) {
+					map.grid[enemy.x][enemy.y].weight = 1
+				}
+				if (possiblePath.length !== 0) {
+					if (possiblePath.length - 1 <= range) {
+						pickedPath = possiblePath
+						picked = target
+					} else possiblePaths[1].push(possiblePath)
+				}
+				map.grid[target.x][target.y].weight = 0
+			})
+			
+			targets[2].forEach((targetList, j) => {
+				for (let i = 0; i < targetList.length && !picked; ++i) {
+					
+					// check target priority 0
+					map.grid[targetList[i].x][targetList[i].y].weight = 1
+					let pathValid = false
+					while (!pathValid) {
+						const possiblePath = astar.search(map, start, map.grid[targetList[i].x][targetList[i].y])
+						pathValid = true
+						for (const enemy of allEnemies) {
+							if (possiblePath.length !== 0 && enemy !== this) {
+								/* case 1: within range and weaponRange === 1, check 1 away
+								   case 2: longer than 2 && within move + 2 and weaponRange > 1, check 2 away
+								   case 3: longer than 2
+								*/
+								
+								if (targetList[i].player || targetList[i].neutral) {
+									if (possiblePath.length <= range && possiblePath.length > 1 && this.weaponRange === 1) {
+										if (possiblePath[possiblePath.length - 2].x === enemy.x && possiblePath[possiblePath.length - 2].y === enemy.y) {
+											map.grid[enemy.x][enemy.y].weight = 0
+											pathValid = false
+										}
+									} else if (this.weaponRange > 1 && possiblePath.length > 2 && possiblePath.length <= this.move + 2) {
+										if (possiblePath[possiblePath.length - 3].x === enemy.x && possiblePath[possiblePath.length - 3].y === enemy.y) {
+											map.grid[enemy.x][enemy.y].weight = 0
+											pathValid = false
+										}
+									} else if (possiblePath.length > 2) {
+										if (possiblePath[this.move - 1].x === enemy.x && possiblePath[this.move - 1].y === enemy.y) {
+											map.grid[enemy.x][enemy.y].weight = 0
+											pathValid = false
+										}
+									}
+								} else {
+									if (possiblePath.length <= this.move) {
+										if (possiblePath[possiblePath.length - 1].x === enemy.x && possiblePath[possiblePath.length - 1].y === enemy.y) {
+											map.grid[enemy.x][enemy.y].weight = 0
+											pathValid = false
+										}
+									} else if (possiblePath[this.move - 1].x === enemy.x && possiblePath[this.move - 1].y === enemy.y) {
+										map.grid[enemy.x][enemy.y].weight = 0
+										pathValid = false
+									}
+								}
+							}
+						}
+					}
+					
+					const possiblePath = astar.search(map, start, map.grid[targetList[i].x][targetList[i].y])
+					for (const enemy of allEnemies) {
+						map.grid[enemy.x][enemy.y].weight = 1
+					}
+					if (possiblePath.length !== 0) {
+						if (possiblePath.length - 1 <= range) {
+							pickedPath = possiblePath
+							picked = targetList[i]
+						} else possiblePaths[2][j][i] = possiblePath
+					}
+					map.grid[targetList[i].x][targetList[i].y].weight = 0
+				}
+			})
+			
+			if (!pickedPath) {
+				pickedPath = possiblePaths[0][0]
+				if (!pickedPath) {
+					pickedPath = possiblePaths[1][0]
+				}
+				if (!pickedPath) {
+					possiblePaths[2].forEach(pathGroup => {
+						pathGroup.sort((a, b) => a.length - b.length)
+					})
+					for (let i = 0; i < possiblePaths[2].length && !pickedPath; ++i) {
+						pickedPath = possiblePaths[2][i][0]
+					}
+				}
+			}
+			
+			if (pickedPath && pickedPath.length <= range && (picked.player || picked.neutral || picked.ids[0] === 'wall' || picked.ids[0] === 'respawner')) {
+				/* case 1: within range and weaponRange === 1, check 1 away
+				   case 2: longer than 2 && within move + 2 and weaponRange > 1, check 2 away
+				   case 3: longer than 2
+				*/
+				if (this.weaponRange === 1 && pickedPath.length > 1) {
+					this.x = pickedPath[pickedPath.length - 2].x
+					this.y = pickedPath[pickedPath.length - 2].y
+				} else if (this.weaponRange === 3 && pickedPath.length > 2 && pickedPath.length <= range - 1) {
+					this.x = pickedPath[pickedPath.length - 3].x
+					this.y = pickedPath[pickedPath.length - 3].y
+				} else if (this.weaponRange === 3 && pickedPath.length > 3 && pickedPath.length <= range) {
+					this.x = pickedPath[pickedPath.length - 4].x
+					this.y = pickedPath[pickedPath.length - 4].y
+				} else if (this.weaponRange === 4 && pickedPath.length > 2 && pickedPath.length <= range - 2) {
+					this.x = pickedPath[pickedPath.length - 3].x
+					this.y = pickedPath[pickedPath.length - 3].y
+				} else if (this.weaponRange === 4 && pickedPath.length > 3 && pickedPath.length <= range - 1) {
+					this.x = pickedPath[pickedPath.length - 4].x
+					this.y = pickedPath[pickedPath.length - 4].y
+				} else if (this.weaponRange === 4 && pickedPath.length > 4 && pickedPath.length <= range) {
+					this.x = pickedPath[pickedPath.length - 5].x
+					this.y = pickedPath[pickedPath.length - 5].y
+				} else if (this.weaponRange === 4 && pickedPath.length >= this.move) {
+					this.x = pickedPath[this.move - 1].x
+					this.y = pickedPath[this.move - 1].y
+				}
+			} else if (pickedPath && pickedPath.length - 1 <= range && !(picked.player || picked.neutral) && picked.ids[0] !== 'wall' && picked.ids[0] !== 'respawner') {
+				this.x = pickedPath[pickedPath.length - 1].x
+				this.y = pickedPath[pickedPath.length - 1].y
+			} else if (pickedPath) {
+				this.x = pickedPath[this.move - 1].x
+				this.y = pickedPath[this.move - 1].y
+			}
+		}
+		updateStats () {
+			this.healthGrowth = 90
+			this.strengthGrowth = 100
+			this.strength = 10 + Math.round(this.strengthGrowth / 100 * (this.level - 1))
+			this.defenseGrowth = 80
+			this.defense = 10 + Math.round(this.defenseGrowth / 100 * (this.level - 1))
+			this.skillGrowth = 80
+			this.skill = 10 + Math.round(this.skillGrowth / 100 * (this.level - 1))
+			this.speedGrowth = 60
+			this.speed = 15 + Math.round(this.speedGrowth / 100 * (this.level - 1))
+			this.weapon = ['Claws', 'Adamant']
+			this.inventory = [this.weapon]
+			this.maxHealth = 40 + Math.round(this.healthGrowth / 100 * (this.level - 1))
+			this.health = this.maxHealth
+		}
+	}
+	
 	let goblin1 = new Hostile(1, 1)
 	let goblin2 = new Hostile(1, 1)
 	
@@ -1660,7 +2074,8 @@ let mountedTrollChance = 96
 		2: {0: 6, 1: 9, 2: 12, 3: 15},
 		3: {0: 3, 1: 5, 2: 8, 3: 11, 5: 12},
 		4: {4: 0},
-		5: {5: 0}
+		5: {5: 0},
+		9: {3: 20}
 	}
 	const hit = {
 		0: {0: 90, 1: 85, 2: 85, 3: 95},
@@ -1668,7 +2083,8 @@ let mountedTrollChance = 96
 		2: {0: 75, 1: 70, 2: 75, 3: 85},
 		3: {0: 85, 1: 75, 2: 85, 3: 90, 5: 110},
 		4: {4: 0},
-		5: {5: 0}
+		5: {5: 0},
+		9: {3: 120}
 	}
 	const Crit = [[5, 10, 15, 30], [0, 5, 10, 20], [0, 5, 5, 10], [0, 5, 10, 20, 0, 10], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
 	const crit = {
@@ -1677,7 +2093,8 @@ let mountedTrollChance = 96
 		2: {0: 0, 1: 5, 2: 5, 3: 10},
 		3: {0: 0, 1: 5, 2: 10, 3: 20, 5: 10},
 		4: {4: 0},
-		5: {5: 0}
+		5: {5: 0},
+		9: {3: -10}
 	}
 	const Weight = [[1, 2, 3, 2], [4, 6, 6, 5], [6, 8, 10, 8], [3, 4, 5, 3, 0, 10], [0, 4, 4, 4, 4], [0, 0, 0, 0, 0, 0]]
 	const weight = {
@@ -1686,7 +2103,8 @@ let mountedTrollChance = 96
 		2: {0: 6, 1: 8, 2: 10, 3: 8},
 		3: {0: 3, 1: 4, 2: 5, 3: 3, 5: 10},
 		4: {4: 4},
-		5: {5: 0}
+		5: {5: 0},
+		9: {3: 10}
 	}
 	const weaponEffective = {
 		0: {0: '', 1: '', 2: '', 3: ''},
@@ -1694,7 +2112,8 @@ let mountedTrollChance = 96
 		2: {0: '', 1: '', 2: '', 3: ''},
 		3: {0: 'Flying', 1: 'Flying', 2: 'Flying', 3: 'Flying', 5: 'Flying'},
 		4: {4: ''},
-		5: {5: ''}
+		5: {5: ''},
+		9: {3: ''}
 	}
 	const weaponValue = {
 		0: 100,
@@ -1894,10 +2313,10 @@ let mountedTrollChance = 96
 		})
 		board[colliseum.x][colliseum.y] = 0
 		allPlayers.forEach(e => {
-			board[e.x][e.y] = 0
+			if (board[e.x] !== undefined) board[e.x][e.y] = 0
 		})
 		allNeutrals.forEach(e => {
-			board[e.x][e.y] = 0
+			if (board[e.x] !== undefined) board[e.x][e.y] = 0
 		})
 		return board
 	}
@@ -1940,8 +2359,22 @@ let mountedTrollChance = 96
 			if (!selected) previousSelected = {'x': Math.round(mouseX - 0.5), 'y': Math.round(mouseY - 0.5)}
 			if (Math.round(mouseX - 0.5) === objects[i]['x'] && Math.round(mouseY - 0.5) === objects[i]['y'] && selected !== objects[i]) {
 				if (keyWentDown['l'] && !objects[i].ids.includes('wall') && !objects[i].ids.includes('respawner')) {
-					selected = objects[i]
-					keyWentDown['l'] = 0
+					if (enemyPhase && objects[i].player) {
+						cheatCount.movingWrongPhase += 1
+						cheatCount.cheatAlert('movingWrongPhase')
+					}
+					if (objects[i].hostile) {
+						cheatCount.tampering += 1
+						cheatCount.cheatAlert('tampering')
+					}
+					if (objects[i].health <= 0) {
+						cheatCount.controllingDead += 1
+						cheatCount.cheatAlert('controllingDead')
+					}
+					if (!objects[i].uninvitedGuest) {
+						selected = objects[i]
+						keyWentDown['l'] = 0
+					}
 				}
 				ctx.fillStyle = '#ffffff'
 				ctx.fillText(objects[i]['name'], 370, 550)
@@ -2082,7 +2515,7 @@ let mountedTrollChance = 96
 			let objectWeaponEffective = 1
 			for (const id of opponent.ids) {
 				if (object.effective === id) objectEffective *= Math.sqrt(2)
-				if (weaponEffective[WEAPON[object.weapon[0]]][MATERIAL[object.weapon[1]]] === id) objectWeaponEffective *= Math.sqrt(2)
+				if (weaponEffective[WEAPON[object.weapon[0]] - 1][MATERIAL[object.weapon[1] - 1]] === id) objectWeaponEffective *= Math.sqrt(2)
 			}
 			const objectAttack = Math.round(object.strength + might[WEAPON[object.weapon[0]] - 1][MATERIAL[object.weapon[1]] - 1] * objectEffective * objectWeaponEffective) - opponent.defense - opponent.armorSum()
 			let objectHit
@@ -2157,6 +2590,14 @@ let mountedTrollChance = 96
 				
 				// clear text
 				alerts.textContent = ''
+				
+				// anti-cheat
+				if (object.player && object.attacked) {
+					cheatCount.overMoving += 1
+					cheatCount.cheatAlert('overMoving')
+				} else if (object.player && !opponent.arena) {
+					object.attacked = true
+				}
 				
 				if (!opponent.ids.includes('wall') && !opponent.ids.includes('respawner')) {
 					// object first attack
@@ -2306,7 +2747,14 @@ let mountedTrollChance = 96
 			let target = inRange[healSelect % inRange.length]
 			ctx.fillText(target.name, 250, 550)
 			ctx.fillText('Health: ' + target.health + ' / ' + target.maxHealth, 200, 575)
-			if (getButtons()[1] && target.health < target.maxHealth) object.heal(target)
+			if (getButtons()[1] && target.health < target.maxHealth) {
+				if (object.didHeal) {
+					cheatCount.overMoving += 1
+					cheatCount.cheatAlert('overMoving')
+				} else object.didHeal = true
+				
+				object.heal(target)
+			}
 		}
 		if (healer.exp >= 100) {
 			// clear text
@@ -2790,7 +3238,7 @@ let mountedTrollChance = 96
 				if (player.respawning) {
 					player.x = 15 + Math.round(Math.random() * 4 - 0.5)
 					player.y = 10 + Math.round(Math.random() * 4 - 0.5)
-					player.exp -= 25
+					player.exp -= 50
 					++player.deaths
 					if (player === selected) selected = 0
 					playerRespawners.forEach(playerRespawner => {
@@ -2811,6 +3259,11 @@ let mountedTrollChance = 96
 		}
 		
 		if (keyWentDown[' ']) {
+			
+			allPlayers.forEach(player => {
+				player.attacked = false
+				if (player.didHeal) player.didHeal = false
+			})
 			
 			// turn advancement
 			// enemy spawning
@@ -2840,7 +3293,17 @@ let mountedTrollChance = 96
 			} else siegeCountDown.push(0)
 			
 			// enemy phase
+			if (enemyPhase) {
+				cheatCount.turnSkipping += 1
+				cheatCount.cheatAlert('turnSkipping')
+			}
 			if (!enemyPhase && allEnemies.length) {
+				
+				cheatResetRands = [Math.random(), Math.random(), Math.random(), Math.random()]
+				if (cheatResetRands[0] < cheatDecrementChance && cheatCount.overMoving > 0) cheatCount.overMoving -= 1
+				if (cheatResetRands[1] < cheatDecrementChance && cheatCount.tampering > 0) cheatCount.tampering -= 1
+				if (cheatResetRands[2] < cheatDecrementChance && cheatCount.turnSkipping > 0) cheatCount.turnSkipping -= 1
+				if (cheatResetRands[3] < cheatDecrementChance && cheatCount.movingWrongPhase > 0) cheatCount.movingWrongPhase -= 1
 				
 				// announce enemy phase
 				writeAlerts('Enemy Phase!')
@@ -2894,7 +3357,7 @@ let mountedTrollChance = 96
 			
 			// enemy level-wealth calculation
 			const wealthOrder = getWealthOrder()
-			const fastLevelUp = ((wealthOrder[0] + 150) / (wealthOrder[2] + 150) > 2)
+			const fastLevelUp = ((wealthOrder[0] + 200) / (wealthOrder[2] + 200) > 3)
 			const intervalFactor = 1 - fastLevelUp / 2
 			if ((getHighestWealth() - 150) / (wealthInterval * intervalFactor) >= autoEnemyDifficulty) {
 				autoEnemyDifficulty += 1
@@ -2908,7 +3371,7 @@ let mountedTrollChance = 96
 		}
 		
 		// enemy level and equipment
-		enemyDifficulty += getButtons()[5]
+		if (enemyDifficulty + getButtons()[5] >= autoEnemyDifficulty) enemyDifficulty += getButtons()[5]
 		
 		// lever-door relation
 		for (let i = 0; i < levers.length; i++) {
