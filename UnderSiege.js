@@ -1,12 +1,8 @@
 function main () {
-	/* list of stuff this game still needs: 
-	fix sniper ai
-	the rest of the promotionspromotions
+	/* list of stuff this game still needs:
+	the rest of the promotions
 	untangle pSize
 	arrays to methods
-	
-	lower priority:
-	implement 'surprise!'
 	*/
 	
 	const canvas = document.getElementById('canvas')
