@@ -51,7 +51,7 @@ function main () {
 		'tampering': ['It\'s a bad idea to tamper with forces beyond your players.', 'The gods grow angry with your tampering.'],
 		'turnSkipping': ['Be patient, the turn hasn\'t ended yet.', 'The gods dislike your impatience.'],
 		'movingWrongPhase': ['Halt! It is not your turn.', 'The gods are angered by your disrespect of turns.'],
-		'controllingDead': ['Only fools trifle with spirits of the dead.', 'The gods will not allow you to control the dead.']
+		'controllingDead': ['Only fools trifle with spirits of the dead.', 'The gods are revolted by your controlling of the dead.']
 	}
 	const cheatsToLimits = {
 		'overMoving': [4, 8, 24],
