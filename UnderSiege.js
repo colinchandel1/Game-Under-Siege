@@ -52,8 +52,9 @@ function main () {
 				playerMusic.pause()
 				enemyMusic.pause()
 				playerSiegeMusic.pause()
-				
-				surpriseDestruction.play()
+				setTimeout(() => {
+					surpriseDestruction.play()
+				}, 3000)
 			}
 		}
 	}
@@ -3231,11 +3232,12 @@ let mountedTrollChance = 96
 						}
 					}
 				}
-				if (constantEnemyPhase) iTime += enemyInterval - 3
 			}
 		}
 		
-		if (keyWentDown['k'] || (enemyPhase && !(iTime % 12))) {
+		if (keyWentDown['k'] || (enemyPhase && !(iTime % enemyInterval))) {
+			
+			if (constantEnemyPhase) iTime += enemyInterval - 3
 			
 			// various mechanisms to deal with hp <= 0 and fleeing
 			for (let i = 0; i < allEnemies.length; i++) {
