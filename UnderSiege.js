@@ -11,6 +11,7 @@ function main () {
 	const playerMusic = document.getElementById('playerMusic')
 	const playerSiegeMusic = document.getElementById('playerSiegeMusic')
 	const enemyMusic = document.getElementById('enemyMusic')
+	const surpriseDestruction = document.getElementById('surpriseDestruction')
 	playerMusic.loop = true
 	playerSiegeMusic.loop = true
 	enemyMusic.loop = true
@@ -29,7 +30,7 @@ function main () {
 	// difficulty variables
 	let wealthInterval = 80
 	let enemyLatency = 5
-	let enemyMaterialLag = 0.1
+	let enemyMaterialLag = 0.2
 	let enemySiegeMin = 20
 	let enemySiegeMax = 60
 	let promotions = true
@@ -43,7 +44,17 @@ function main () {
 			if (cheatCount[cheat] === cheatsToLimits[cheat][0]) writeAlerts(cheatsToMsg[cheat][0])
 			if (cheatCount[cheat] === cheatsToLimits[cheat][1]) writeAlerts(cheatsToMsg[cheat][1])
 			if (surprised) manageSurprise(cheat)
-			if (cheatCount[cheat] === cheatsToLimits[cheat][2]) summonSurprise()
+			if (cheatCount[cheat] === cheatsToLimits[cheat][2] && !surprised) summonSurprise()
+			if (surprised && getCheatTotal() >= cheatTotalLimit && !constantEnemyPhase) {
+				constantEnemyPhase = true
+				
+				// change music
+				playerMusic.pause()
+				enemyMusic.pause()
+				playerSiegeMusic.pause()
+				
+				surpriseDestruction.play()
+			}
 		}
 	}
 	const cheatsToMsg = {
@@ -60,15 +71,21 @@ function main () {
 		'movingWrongPhase': [2, 4, 10],
 		'controllingDead': [3, 6, 12]
 	}
+	const cheatTotalLimit = 60
+	const getCheatTotal = () => {
+		return cheatCount.overMoving + cheatCount.tampering + cheatCount.turnSkipping + cheatCount.movingWrongPhase + cheatCount.controllingDead
+	}
 	const summonSurprise = (cheat) => {
 		writeAlerts('The gods have decided to punish you!')
 		surprised = true
 		const lvl = allPlayers.slice().sort((a, b) => b.level - a.level)[0].level + 20
 		const surprise = new Surprise(50, 10, lvl)
+		enemyPhase = true
+		iTime = 1
 	}
 	const manageSurprise = (cheat) => {
 		surprises.forEach(surprise => {
-			if (cheat === 'overMoving') {
+			if (cheat === 'overMoving' && !enemyPhase) {
 				enemyPhase = true
 				iTime = 1
 			} else if (cheat === 'turnSkipping') surprise.move += 1
@@ -359,6 +376,7 @@ function main () {
 	}
 	
 	const playerRespawners = [new playerRespawner(9, 9, 100, 1, 15)]
+	let allRespawnersDestroyed = false
 	
 	// players
 	/*
@@ -511,7 +529,7 @@ attackSpeed = speed * con / (con + weight)
 				this.healthGrowth = 80
 				this.strengthGrowth = 40
 				this.defenseGrowth = 40
-				this.skillGrowth = [70, 0, 30, 30, 0, 10]
+				this.skillGrowth = [90, 0, 50, 50, 0, 10]
 				this.speedGrowth = 70
 				this.option1 = 'Halberdier'
 				this.option2 = 'Wyvern Rider'
@@ -1214,7 +1232,7 @@ let mountedTrollChance = 96
 			
 			return inRange
 		}
-		targetting () {
+		targeting () {
 			let itself = this
 			
 			// figure out if a player is in range of the enemy
@@ -1257,7 +1275,7 @@ let mountedTrollChance = 96
 			let enemies = attackables.slice()
 			for (let i = enemies.length - 1; i > 0; --i) {
 				if ((!enemies[i].player && !enemies[i].neutral) || enemies[i].health <=0) enemies.splice(i, 1)
-				if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
+				else if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
 			}
 			enemies.sort((a, b) => Math.abs(itself.x - a.x) + Math.abs(itself.y - a.y) - Math.abs(itself.x - b.x) - Math.round(itself.y - b.y))
 			let stableWalls = breakableWalls.slice()
@@ -1278,7 +1296,7 @@ let mountedTrollChance = 96
 			const range = this.move + this.weaponRange
 			
 			// check each target
-			let targets = this.targetting()
+			let targets = this.targeting()
 			let possiblePaths = Array(targets.length).fill([])
 			possiblePaths[0] = Array(targets[0].length).fill([])
 			
@@ -1571,6 +1589,8 @@ let mountedTrollChance = 96
 	}
 	let enemyPhase = false
 	let enemyAttacking = false
+	let constantEnemyPhase = false
+	const constEnemyPhaseInterval = 2
 	
 	// neutral objects
 	class Neutral {
@@ -1659,8 +1679,7 @@ let mountedTrollChance = 96
 			this.hostile = true
 			this.name = 'Punishment from Above'
 			this.ids = []
-			this.fleeing = false
-			this.fled = false
+			this.timeSinceAttacked = 0
 			this.arena = false
 			this.con = 300
 			this.armor = ['Adamant', 'Adamant', 'Adamant', 'Adamant']
@@ -1741,7 +1760,7 @@ let mountedTrollChance = 96
 			
 			return inRange
 		}
-		targetting () {
+		targeting () {
 			let itself = this
 			
 			// figure out if a player is in range of the enemy
@@ -1759,6 +1778,7 @@ let mountedTrollChance = 96
 				inRange.sort((a, b) => (a.defense - b.defense))
 				for (let i = inRange.length - 1; i >= 0; --i) {
 					if (this.weaponRange >= 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - inRange[i].defense - inRange[i].armorSum() <= 0) inRange.splice(i, 1)
+					else if (inRange[i].health <= -50) inRange.splice(i, 1)
 				}
 			}
 			
@@ -1766,7 +1786,7 @@ let mountedTrollChance = 96
 			let enemies = attackables.slice()
 			for (let i = enemies.length - 1; i > 0; --i) {
 				if ((!enemies[i].player && !enemies[i].neutral) || enemies[i].health <=0) enemies.splice(i, 1)
-				if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
+				else if (this.weaponRange > 1 && this.strength + might[WEAPON[this.weapon[0]] - 1][MATERIAL[this.weapon[1]] - 1] - enemies[i].defense - enemies[i].armorSum() <= 0) enemies.splice(i, 1)
 			}
 			enemies.sort((a, b) => Math.abs(itself.x - a.x) + Math.abs(itself.y - a.y) - Math.abs(itself.x - b.x) - Math.round(itself.y - b.y))
 			let stableWalls = breakableWalls.slice()
@@ -1786,7 +1806,7 @@ let mountedTrollChance = 96
 			const range = this.move + this.weaponRange
 			
 			// check each target
-			let targets = this.targetting()
+			let targets = this.targeting()
 			let possiblePaths = Array(targets.length).fill([])
 			possiblePaths[2] = Array(targets[2].length).fill([])
 			
@@ -2314,6 +2334,22 @@ let mountedTrollChance = 96
 		allNeutrals.forEach(e => {
 			if (board[e.x] !== undefined) board[e.x][e.y] = 0
 		})
+		allEnemies.forEach(e => {
+			if (board[e.x] !== undefined) board[e.x][e.y] = 1
+		})
+		return board
+	}
+	const buildClearBoard = () => {
+		board = Array(900 / pSize).fill().map(() => Array(450 / pSize).fill(1))
+		allPlayers.forEach(e => {
+			if (board[e.x] !== undefined) board[e.x][e.y] = 1
+		})
+		allNeutrals.forEach(e => {
+			if (board[e.x] !== undefined) board[e.x][e.y] = 1
+		})
+		allEnemies.forEach(e => {
+			if (board[e.x] !== undefined) board[e.x][e.y] = 1
+		})
 		return board
 	}
 	
@@ -2451,7 +2487,7 @@ let mountedTrollChance = 96
 				})
 				if (colliseum.x === Math.round(mouseX - 0.5) && colliseum.y === Math.round(mouseY - 0.5)) traversible = 0
 				
-				if (traversible !== 0) {
+				if (traversible !== 0 && Math.round(mouseX - 0.5) >= 0 && Math.round(mouseX - 0.5) < 60 && Math.round(mouseY - 0.5) >= 0) {
 					[objects[i].x, objects[i].y] = [Math.round(mouseX - 0.5), Math.round(mouseY - 0.5)]
 					if (keyWentDown['l']) {
 						selected = 0
@@ -2523,9 +2559,9 @@ let mountedTrollChance = 96
 			let opponentHit
 			let opponentShieldChance
 			let opponentShieldStrength
-			const objectCrit = object.getActiveSkill() + crit[WEAPON[object.getWeapon(0)] - 1][MATERIAL[object.getWeapon(1)] - 1] - opponent.armorSum()
+			const objectCrit = object.getActiveSkill() - opponent.getActiveSkill() / 2 + crit[WEAPON[object.getWeapon(0)] - 1][MATERIAL[object.getWeapon(1)] - 1] - opponent.armorSum()
 			let opponentCrit
-			if (opponent.weapon) opponentCrit = opponent.getActiveSkill() + crit[WEAPON[opponent.getWeapon(0)] - 1][MATERIAL[opponent.getWeapon(1)] - 1] - object.armorSum() * 2
+			if (opponent.weapon) opponentCrit = opponent.getActiveSkill() - object.getActiveSkill() / 2 + crit[WEAPON[opponent.getWeapon(0)] - 1][MATERIAL[opponent.getWeapon(1)] - 1] - object.armorSum() * 2
 			else opponentCrit = 0
 			
 			// print (also modify a few) object battle variables
@@ -3163,7 +3199,8 @@ let mountedTrollChance = 96
 			if (!(iTime % enemyInterval)) {
 				const enemyIndex = iTime % (enemyInterval * (allEnemies.length + 1)) / enemyInterval - 1
 				if (enemyIndex !== -1) {
-					if (!allEnemies[enemyIndex].fleeing) allEnemies[enemyIndex].pathFinding(new Graph (buildBoard()))
+					if (allEnemies[enemyIndex].uninvitedGuest && constantEnemyPhase && allRespawnersDestroyed) allEnemies[enemyIndex].pathFinding(new Graph (buildClearBoard()))
+					else if (!allEnemies[enemyIndex].fleeing) allEnemies[enemyIndex].pathFinding(new Graph (buildBoard()))
 					else allEnemies[enemyIndex].flee(new Graph (buildBoard()))
 					enemyAttacking = true
 					if (allEnemies.length) battleCheck(allEnemies[enemyIndex], [allEnemies[enemyIndex].attacking(), breakableWalls, playerRespawners].flat())
@@ -3180,18 +3217,21 @@ let mountedTrollChance = 96
 					alerts.textContent = 'Player Phase!'
 					
 					// play player music
-					if (allEnemies.length <= 20) {
-						playerMusic.currentTime = 0
-						setTimeout(() => {
-							playerMusic.play()
-						}, 500)
-					} else {
-						playerSiegeMusic.currentTime = 0
-						setTimeout(() => {
-							playerSiegeMusic.play()
-						}, 500)
+					if (!constantEnemyPhase) {
+						if (allEnemies.length <= 20) {
+							playerMusic.currentTime = 0
+							setTimeout(() => {
+								playerMusic.play()
+							}, 500)
+						} else {
+							playerSiegeMusic.currentTime = 0
+							setTimeout(() => {
+								playerSiegeMusic.play()
+							}, 500)
+						}
 					}
 				}
+				if (constantEnemyPhase) iTime += enemyInterval - 3
 			}
 		}
 		
@@ -3310,13 +3350,16 @@ let mountedTrollChance = 96
 					iTime = 1
 				}, 1500)
 				
-				// stop player music
-				playerMusic.pause()
-				playerSiegeMusic.pause()
-				
-				// play enemy music
-				enemyMusic.currentTime = 0
-				enemyMusic.play()
+				if (!constantEnemyPhase) {
+					
+					// stop player music
+					playerMusic.pause()
+					playerSiegeMusic.pause()
+					
+					// play enemy music
+					enemyMusic.currentTime = 0
+					enemyMusic.play()
+				}
 			}
 			
 			// fort healing
@@ -3374,6 +3417,24 @@ let mountedTrollChance = 96
 			doors[i].isOpen = !levers[i].isPulled
 		}
 		
+		// surprise time since attacked
+		for (const surprise of surprises) {
+			if (!enemyPhase) {
+				if (constantEnemyPhase && surprise.timeSinceAttacked >= constEnemyPhaseInterval) {
+					enemyPhase = true
+					iTime = 1
+					surprise.timeSinceAttacked = 0
+				}
+			}
+			surprise.timeSinceAttacked += timeInterval / 1000
+		}
+		
+		// any respawners left
+		allRespawnersDestroyed = true
+		for (const respawner of playerRespawners) {
+			if (respawner.health > 0) allRespawnersDestroyed = false
+		}
+		
 		// paint
 		ballistas.forEach(e => {
 			ctx.fillStyle = '#804020'
@@ -3410,6 +3471,33 @@ let mountedTrollChance = 96
 				ctx.fillStyle = '#ff0000'
 				ctx.fillText('+', (respawner.x + tile[0] + 1 / 5) * pSize, (respawner.y + tile[1] + 4 / 5) * pSize)
 			})
+		})
+		
+		// paint walls and doors
+		ctx.fillStyle = '#906040'
+		walls.forEach(e => {
+			ctx.fillRect(e.x, e.y, e.length, e.width)
+		})
+		
+		doors.forEach (e => {
+			if (!e.isOpen) {
+				if (e.axis === 'x') ctx.fillRect(e.x, e.y + pSize / 2, e.length, 2)
+				else ctx.fillRect(e.x + pSize / 2, e.y, 2, e.length)
+			}
+		})
+		
+		levers.forEach(e => {
+			if (e.isPulled) ctx.fillText('|', (e.x + 1 / 3) * pSize, (e.y + 4 / 5) * pSize)
+			else ctx.fillText('/', (e.x + 1 / 3) * pSize, (e.y + 4 / 5) * pSize)
+		})
+		
+		breakableWalls.forEach(e => {
+			if (e.health > 0) {
+				ctx.fillStyle = '#986848'
+				ctx.fillRect(e.x * pSize, e.y * pSize, pSize, pSize)
+				ctx.fillStyle = '#000000'
+				ctx.fillText('X', (e.x + 1 / 6) * pSize, (e.y + 4 / 5) * pSize)
+			}
 		})
 		
 		// paint players and enemies
@@ -3449,33 +3537,6 @@ let mountedTrollChance = 96
 			ctx.fillText('N', (allNeutrals[i].x + 1 / 5) * pSize, (allNeutrals[i].y + 4 / 5) * pSize)
 		// })
 		}
-		
-		// paint walls and doors
-		ctx.fillStyle = '#906040'
-		walls.forEach(e => {
-			ctx.fillRect(e.x, e.y, e.length, e.width)
-		})
-		
-		doors.forEach (e => {
-			if (!e.isOpen) {
-				if (e.axis === 'x') ctx.fillRect(e.x, e.y + pSize / 2, e.length, 2)
-				else ctx.fillRect(e.x + pSize / 2, e.y, 2, e.length)
-			}
-		})
-		
-		levers.forEach(e => {
-			if (e.isPulled) ctx.fillText('|', (e.x + 1 / 3) * pSize, (e.y + 4 / 5) * pSize)
-			else ctx.fillText('/', (e.x + 1 / 3) * pSize, (e.y + 4 / 5) * pSize)
-		})
-		
-		breakableWalls.forEach(e => {
-			if (e.health > 0) {
-				ctx.fillStyle = '#986848'
-				ctx.fillRect(e.x * pSize, e.y * pSize, pSize, pSize)
-				ctx.fillStyle = '#000000'
-				ctx.fillText('X', (e.x + 1 / 6) * pSize, (e.y + 4 / 5) * pSize)
-			}
-		})
 		
 		if (enemyPhase) displayAllHealth()
 		
